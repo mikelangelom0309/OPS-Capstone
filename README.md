@@ -1,2 +1,3 @@
-# OPS-Capstone
-IEEE Capstone Project. Mikelangelo Mutti, Ayan Singh, Wihl Costelo, Carson Phuong
+# OPS-Capstone (Tetris)
+IEEE Capstone Project. 
+Contributors: Mikelangelo Mutti, Ayan Singh, Wihl Costelo, Carson Phuong
