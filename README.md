@@ -24,6 +24,3 @@ tetris_server/ → upload to Server Nano
 1. tetris_player.ino with PLAYER_ID 1 → Player 1 Nano
 2. tetris_player.ino with PLAYER_ID 2 → Player 2 Nano
 3. tetris_server.ino → Server Nano
-
-## Wiring
-[link to or paste the wiring table here]
