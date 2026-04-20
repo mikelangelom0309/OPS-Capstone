@@ -101,6 +101,7 @@ uint8_t  nextPt;              // next piece type
 uint32_t score32;
 uint8_t  level;
 uint8_t  linesTotal;
+uint16_t gameSeed;
 
 // ── Timing bookmarks ─────────────────────────────────────────
 uint32_t tDrop, tSend;
@@ -111,6 +112,10 @@ uint32_t tJoyBtn, tRstBtn;        // debounce timestamps
 bool prevJoyUp  = false;
 bool prevJoyBtn = true;   // HIGH = released (INPUT_PULLUP)
 bool prevRstBtn = true;
+bool gameOverDrawn = false;
+
+void enterWaiting();
+void initGame();
 
 // ═══════════════════════════════════════════════════════════════
 //  Piece helper functions
@@ -355,6 +360,19 @@ void drawGameOver() {
   oled.display();
 }
 
+void drawWaitingScreen() {
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setTextColor(WHITE);
+  oled.setCursor(20, 12);
+  oled.print(PLAYER_ID == 1 ? F("PLAYER 1") : F("PLAYER 2"));
+  oled.setCursor(6, 28);
+  oled.print(F("Waiting for server"));
+  oled.setCursor(18, 44);
+  oled.print(F("Start on host"));
+  oled.display();
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  Radio — send current state to server
 // ═══════════════════════════════════════════════════════════════
@@ -366,11 +384,30 @@ void sendState() {
   pkt.lines     = linesTotal;
   pkt.nextPiece = nextPt;
   pkt.state     = gs;
+  pkt.reserved  = 0;
 
   // NRF is half-duplex: stop listening briefly to transmit
   radio.stopListening();
   radio.write(&pkt, sizeof(pkt));
   radio.startListening();
+}
+
+void handleServerCommand(const ServerCmd& cmd) {
+  if (cmd.opcode == CMD_START) {
+    gameSeed = cmd.gameSeed;
+    randomSeed(gameSeed);
+    initGame();
+  } else if (cmd.opcode == CMD_RESET) {
+    enterWaiting();
+  }
+}
+
+void pollServerCommands() {
+  while (radio.available()) {
+    ServerCmd cmd;
+    radio.read(&cmd, sizeof(cmd));
+    handleServerCommand(cmd);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -426,7 +463,7 @@ void handleInput() {
 
   // ── RESET (dedicated reset button) ─────────────────────────
   if (!rstBtn && prevRstBtn && (now - tRstBtn >= T_BTN_DB)) {
-    initGame();
+    enterWaiting();
     tRstBtn = now;
   }
   prevRstBtn = rstBtn;
@@ -444,6 +481,21 @@ void initGame() {
   spawnPiece();
   gs    = GS_PLAYING;
   tDrop = millis();
+  gameOverDrawn = false;
+}
+
+void enterWaiting() {
+  gs         = GS_WAITING;
+  score32    = 0;
+  level      = 1;
+  linesTotal = 0;
+  nextPt     = 0;
+  memset(board, 0, sizeof(board));
+  tDrop      = millis();
+  tSend      = 0;
+  prevJoyUp  = false;
+  gameOverDrawn = false;
+  drawWaitingScreen();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -481,6 +533,10 @@ void setup() {
   if (PLAYER_ID == 1) radio.openWritingPipe(ADDR_P1);
   else                radio.openWritingPipe(ADDR_P2);
 
+  // Each player also listens for commands from the server.
+  if (PLAYER_ID == 1) radio.openReadingPipe(1, ADDR_C1);
+  else                radio.openReadingPipe(1, ADDR_C2);
+
   // Not expecting any incoming packets on this board, but
   // startListening() is required — we stopListening() briefly to TX.
   radio.startListening();
@@ -489,8 +545,7 @@ void setup() {
   randomSeed((uint32_t)analogRead(A2) ^ ((uint32_t)analogRead(A3) << 10));
 
   // Show waiting screen
-  gs = GS_WAITING;
-  drawScreen(F(" TETRIS  MP"), F("Push joystick btn"), F("   to start"));
+  enterWaiting();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -498,27 +553,30 @@ void setup() {
 // ═══════════════════════════════════════════════════════════════
 void loop() {
   uint32_t now = millis();
+  pollServerCommands();
 
-  // ── WAITING: press joystick button to start ─────────────────
+  // ── WAITING: server start button begins the match ───────────
   if (gs == GS_WAITING) {
-    bool btn = digitalRead(PIN_JOY_BTN);
-    if (!btn && prevJoyBtn && (now - tJoyBtn >= T_BTN_DB)) {
-      initGame();
-      tJoyBtn = now;
+    bool rst = digitalRead(PIN_RST_BTN);
+    if (!rst && prevRstBtn && (now - tRstBtn >= T_BTN_DB)) {
+      enterWaiting();
+      tRstBtn = now;
     }
-    prevJoyBtn = btn;
+    prevRstBtn = rst;
+    if (now - tSend >= T_SEND) { sendState(); tSend = now; }
     return;
   }
 
   // ── GAME OVER ───────────────────────────────────────────────
   if (gs == GS_OVER) {
-    static bool drawn = false;
-    if (!drawn) { drawGameOver(); drawn = true; }
+    if (!gameOverDrawn) {
+      drawGameOver();
+      gameOverDrawn = true;
+    }
 
     bool rst = digitalRead(PIN_RST_BTN);
     if (!rst && prevRstBtn && (now - tRstBtn >= T_BTN_DB)) {
-      drawn = false;
-      initGame();
+      enterWaiting();
       tRstBtn = now;
     }
     prevRstBtn = rst;
