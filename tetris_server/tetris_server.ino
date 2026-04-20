@@ -26,6 +26,7 @@
 // ═══════════════════════════════════════════════════════════════
 #define PIN_CE      9
 #define PIN_CSN     10
+#define PIN_START   2
 
 // ═══════════════════════════════════════════════════════════════
 //  Display
@@ -68,17 +69,23 @@ inline bool cellAt(uint16_t s, uint8_t r, uint8_t c) {
 Adafruit_SSD1306 oled(SCR_W, SCR_H, &Wire, -1);
 RF24             radio(PIN_CE, PIN_CSN);
 
+uint8_t oledAddr = 0x3C;
+
 // ═══════════════════════════════════════════════════════════════
 //  Server state
 // ═══════════════════════════════════════════════════════════════
-PlayerPkt p1 = {1, 0, 1, 0, 0, GS_WAITING};
-PlayerPkt p2 = {2, 0, 1, 0, 0, GS_WAITING};
+PlayerPkt p1 = {1, 0, 1, 0, 0, GS_WAITING, 0};
+PlayerPkt p2 = {2, 0, 1, 0, 0, GS_WAITING, 0};
 
 uint8_t  winnerPid     = 0;     // 0=no winner, 1=P1, 2=P2, 3=draw
 uint32_t tLastDraw     = 0;
 uint32_t tLastReceive  = 0;     // watchdog: track when we last heard from each player
 uint32_t tP1Heard      = 0;
 uint32_t tP2Heard      = 0;
+uint32_t tStartBtn     = 0;
+uint32_t tStatusUntil  = 0;
+bool     prevStartBtn  = true;
+const __FlashStringHelper* statusMsg = nullptr;
 
 // ═══════════════════════════════════════════════════════════════
 //  Rendering helpers
@@ -107,7 +114,8 @@ void drawPanel(const PlayerPkt& p, uint8_t xOff, uint8_t panelW) {
   // Connection status — dim warning if no packet recently
   uint32_t& tHeard = (p.pid == 1) ? tP1Heard : tP2Heard;
   const char* statStr;
-  if (p.state == GS_WAITING)       statStr = "WAIT";
+  if (!tHeard || millis() - tHeard > 1500) statStr = "OFF ";
+  else if (p.state == GS_WAITING)          statStr = "WAIT";
   else if (p.state == GS_PLAYING)  statStr = "PLAY";
   else                              statStr = "DONE";
 
@@ -139,6 +147,11 @@ void drawPanel(const PlayerPkt& p, uint8_t xOff, uint8_t panelW) {
   drawMiniPiece(p.nextPiece, xOff + 21, 48);
 }
 
+void setStatus(const __FlashStringHelper* msg, uint16_t ms = 1500) {
+  statusMsg = msg;
+  tStatusUntil = millis() + ms;
+}
+
 // Winner announcement screen
 void drawWinner() {
   oled.clearDisplay();
@@ -165,8 +178,8 @@ void drawWinner() {
   oled.print(F("P2 score: "));
   oled.print(p2.score);
 
-  oled.setCursor(4, 56);
-  oled.print(F("Rst both boards to replay"));
+  oled.setCursor(10, 56);
+  oled.print(F("Start btn for new game"));
 
   oled.display();
 }
@@ -179,7 +192,37 @@ void drawLive() {
   oled.drawFastVLine(DIVIDER_X, 0, SCR_H, WHITE);
   drawPanel(p2, P2_X,     SCR_W - P2_X);
 
+  oled.setCursor(0, 56);
+  oled.print(statusMsg);
+
   oled.display();
+}
+
+void broadcastCommand(uint8_t opcode, uint16_t gameSeed = 0) {
+  ServerCmd cmd = {opcode, gameSeed, {0, 0, 0, 0, 0}};
+
+  radio.stopListening();
+  radio.openWritingPipe(ADDR_C1);
+  radio.write(&cmd, sizeof(cmd));
+  radio.openWritingPipe(ADDR_C2);
+  radio.write(&cmd, sizeof(cmd));
+  radio.startListening();
+}
+
+bool initDisplay() {
+  Wire.begin();
+
+  if (oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    oledAddr = 0x3C;
+    return true;
+  }
+
+  if (oled.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
+    oledAddr = 0x3D;
+    return true;
+  }
+
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -202,18 +245,22 @@ void checkWin() {
 // ═══════════════════════════════════════════════════════════════
 void setup() {
   Serial.begin(9600);
+  pinMode(PIN_START, INPUT_PULLUP);
+  statusMsg = F("Waiting for players");
 
   // ── OLED ─────────────────────────────────────────────────────
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+  if (!initDisplay()) {
     Serial.println(F("OLED not found"));
     for (;;) {}
   }
   oled.clearDisplay();
   oled.setTextSize(1);
   oled.setTextColor(WHITE);
-  oled.setCursor(16, 16); oled.print(F("SERVER READY"));
-  oled.setCursor(4,  32); oled.print(F("Waiting for players"));
-  oled.setCursor(4,  48); oled.print(F("Both boards must be on"));
+  oled.setCursor(16, 8);  oled.print(F("SERVER READY"));
+  oled.setCursor(0, 24);  oled.print(F("Start btn: D2 -> GND"));
+  oled.setCursor(0, 40);  oled.print(F("Press D2 when ready"));
+  oled.setCursor(0, 56);  oled.print(F("OLED 0x"));
+  oled.print(oledAddr, HEX);
   oled.display();
 
   // ── NRF24L01+ ────────────────────────────────────────────────
@@ -232,6 +279,8 @@ void setup() {
   radio.openReadingPipe(2, ADDR_P2);
   radio.startListening();
 
+  randomSeed((uint32_t)analogRead(A0) ^ ((uint32_t)analogRead(A1) << 10));
+
   Serial.println(F("Server listening on pipes 1 (P1) and 2 (P2)"));
 }
 
@@ -240,6 +289,42 @@ void setup() {
 // ═══════════════════════════════════════════════════════════════
 void loop() {
   uint32_t now = millis();
+
+  bool p1Online = tP1Heard && (now - tP1Heard <= 1500);
+  bool p2Online = tP2Heard && (now - tP2Heard <= 1500);
+
+  if (now >= tStatusUntil) {
+    if (!p1Online && !p2Online)      statusMsg = F("Need P1 and P2 online");
+    else if (!p1Online)              statusMsg = F("Need P1 online");
+    else if (!p2Online)              statusMsg = F("Need P2 online");
+    else if (p1.state != GS_WAITING || p2.state != GS_WAITING)
+                                     statusMsg = F("Reset players to WAIT");
+    else                             statusMsg = F("Press START on server");
+  }
+
+  bool startBtn = digitalRead(PIN_START);
+  bool bothReady = p1Online && p2Online &&
+                   p1.state == GS_WAITING &&
+                   p2.state == GS_WAITING;
+
+  if (!startBtn && prevStartBtn && (now - tStartBtn >= 250)) {
+    if (bothReady) {
+      uint16_t gameSeed = (uint16_t)random(1, 65535);
+      winnerPid = 0;
+      broadcastCommand(CMD_START, gameSeed);
+      setStatus(F("START sent"));
+      Serial.print(F("Starting game with seed "));
+      Serial.println(gameSeed);
+    } else {
+      if (!p1Online && !p2Online)      setStatus(F("Need P1 and P2 online"));
+      else if (!p1Online)              setStatus(F("Need P1 online"));
+      else if (!p2Online)              setStatus(F("Need P2 online"));
+      else                             setStatus(F("Reset players to WAIT"));
+      Serial.println(F("Start ignored: both players must be online and waiting"));
+    }
+    tStartBtn = now;
+  }
+  prevStartBtn = startBtn;
 
   // ── Drain all pending NRF packets ───────────────────────────
   uint8_t pipe;

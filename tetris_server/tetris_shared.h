@@ -12,14 +12,22 @@
 
 // ── Pipe addresses (exactly 5 chars + null) ───────────────────
 // P1 and P2 boards transmit on their own address.
-// Server listens on both.
+// Server listens on both. Players also listen on a dedicated
+// command pipe so the server can start/reset both boards.
 const byte ADDR_P1[6] = "PLYRA";
 const byte ADDR_P2[6] = "PLYRB";
+const byte ADDR_C1[6] = "CMD1A";
+const byte ADDR_C2[6] = "CMD2A";
 
 // ── Game states ───────────────────────────────────────────────
 #define GS_WAITING  0
 #define GS_PLAYING  1
 #define GS_OVER     2
+
+// ── Server → player commands ──────────────────────────────────
+#define CMD_NONE    0
+#define CMD_START   1
+#define CMD_RESET   2
 
 // ── Packet sent from each player board → server every 100 ms ──
 // Total size: 8 bytes (well within NRF24 32-byte max payload).
@@ -30,4 +38,13 @@ struct __attribute__((packed)) PlayerPkt {
   uint8_t  lines;      // total lines cleared
   uint8_t  nextPiece;  // 0-6, index into SHAPES[]
   uint8_t  state;      // GS_*
+  uint8_t  reserved;   // keep a fixed 8-byte NRF payload
+};
+
+// ── Packet sent from server → players ─────────────────────────
+// Fixed 8-byte payload to match the player packet size.
+struct __attribute__((packed)) ServerCmd {
+  uint8_t  opcode;     // CMD_*
+  uint16_t gameSeed;   // used to synchronise both players on start
+  uint8_t  reserved[5];
 };
