@@ -113,49 +113,9 @@ bool prevJoyUp  = false;
 bool prevJoyBtn = true;   // HIGH = released (INPUT_PULLUP)
 bool prevRstBtn = true;
 bool gameOverDrawn = false;
-uint32_t tDiag = 0;
 
 void enterWaiting();
 void initGame();
-
-const __FlashStringHelper* stateName(uint8_t state) {
-  if (state == GS_WAITING) return F("WAITING");
-  if (state == GS_PLAYING) return F("PLAYING");
-  return F("OVER");
-}
-
-void printAddr(const byte* addr) {
-  for (uint8_t i = 0; i < 5; i++) Serial.write(addr[i]);
-}
-
-void printRadioSummary() {
-  Serial.println(F("--- PLAYER RADIO ---"));
-  Serial.print(F("PLAYER_ID: "));
-  Serial.println(PLAYER_ID);
-  Serial.print(F("Chip connected: "));
-  Serial.println(radio.isChipConnected() ? F("YES") : F("NO"));
-  Serial.print(F("TX pipe: "));
-  if (PLAYER_ID == 1) printAddr(ADDR_P1);
-  else                printAddr(ADDR_P2);
-  Serial.println();
-  Serial.print(F("RX pipe: "));
-  if (PLAYER_ID == 1) printAddr(ADDR_C1);
-  else                printAddr(ADDR_C2);
-  Serial.println();
-  radio.printDetails();
-  Serial.println(F("--------------------"));
-}
-
-void logTxResult(bool ok) {
-  Serial.print(F("TX "));
-  Serial.print(ok ? F("OK") : F("FAIL"));
-  Serial.print(F(" pid="));
-  Serial.print(PLAYER_ID);
-  Serial.print(F(" state="));
-  Serial.print(stateName(gs));
-  Serial.print(F(" score="));
-  Serial.println((uint16_t)min(score32, 65535UL));
-}
 
 // ═══════════════════════════════════════════════════════════════
 //  Piece helper functions
@@ -416,7 +376,7 @@ void drawWaitingScreen() {
 // ═══════════════════════════════════════════════════════════════
 //  Radio — send current state to server
 // ═══════════════════════════════════════════════════════════════
-bool sendState() {
+void sendState() {
   PlayerPkt pkt;
   pkt.pid       = PLAYER_ID;
   pkt.score     = (uint16_t)min(score32, 65535UL);
@@ -428,16 +388,11 @@ bool sendState() {
 
   // NRF is half-duplex: stop listening briefly to transmit
   radio.stopListening();
-  bool ok = radio.write(&pkt, sizeof(pkt));
+  radio.write(&pkt, sizeof(pkt));
   radio.startListening();
-  return ok;
 }
 
 void handleServerCommand(const ServerCmd& cmd) {
-  Serial.print(F("CMD opcode="));
-  Serial.print(cmd.opcode);
-  Serial.print(F(" seed="));
-  Serial.println(cmd.gameSeed);
   if (cmd.opcode == CMD_START) {
     gameSeed = cmd.gameSeed;
     randomSeed(gameSeed);
@@ -548,8 +503,6 @@ void enterWaiting() {
 // ═══════════════════════════════════════════════════════════════
 void setup() {
   Serial.begin(9600);
-  Serial.println();
-  Serial.println(F("BOOTING P1 FILE"));
 
   // Input pins
   pinMode(PIN_JOY_BTN, INPUT_PULLUP);
@@ -587,14 +540,12 @@ void setup() {
   // Not expecting any incoming packets on this board, but
   // startListening() is required — we stopListening() briefly to TX.
   radio.startListening();
-  printRadioSummary();
 
   // Seed the RNG from two floating analog pins for unique piece sequences
   randomSeed((uint32_t)analogRead(A2) ^ ((uint32_t)analogRead(A3) << 10));
 
   // Show waiting screen
   enterWaiting();
-  Serial.println(F("EXPECT pid=1 tx=PLYRA rx=CMD1A"));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -612,14 +563,7 @@ void loop() {
       tRstBtn = now;
     }
     prevRstBtn = rst;
-    if (now - tSend >= T_SEND) {
-      bool ok = sendState();
-      if (now - tDiag >= 1000) {
-        logTxResult(ok);
-        tDiag = now;
-      }
-      tSend = now;
-    }
+    if (now - tSend >= T_SEND) { sendState(); tSend = now; }
     return;
   }
 
@@ -638,14 +582,7 @@ void loop() {
     prevRstBtn = rst;
 
     // Keep notifying server we are done
-    if (now - tSend >= T_SEND) {
-      bool ok = sendState();
-      if (now - tDiag >= 1000) {
-        logTxResult(ok);
-        tDiag = now;
-      }
-      tSend = now;
-    }
+    if (now - tSend >= T_SEND) { sendState(); tSend = now; }
     return;
   }
 
@@ -663,12 +600,5 @@ void loop() {
   drawGame();
 
   // Transmit state to server
-  if (now - tSend >= T_SEND) {
-    bool ok = sendState();
-    if (now - tDiag >= 1000) {
-      logTxResult(ok);
-      tDiag = now;
-    }
-    tSend = now;
-  }
+  if (now - tSend >= T_SEND) { sendState(); tSend = now; }
 }

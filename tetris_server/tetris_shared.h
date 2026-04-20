@@ -14,10 +14,10 @@
 // P1 and P2 boards transmit on their own address.
 // Server listens on both. Players also listen on a dedicated
 // command pipe so the server can start/reset both boards.
-const byte ADDR_P1[6] = "PLYRA";
-const byte ADDR_P2[6] = "PLYRB";
-const byte ADDR_C1[6] = "CMD1A";
-const byte ADDR_C2[6] = "CMD2A";
+const uint8_t ADDR_P1[6] = "PLYRA";
+const uint8_t ADDR_P2[6] = "PLYRB";
+const uint8_t ADDR_C1[6] = "CMD1A";
+const uint8_t ADDR_C2[6] = "CMD2A";
 
 // ── Game states ───────────────────────────────────────────────
 #define GS_WAITING  0
