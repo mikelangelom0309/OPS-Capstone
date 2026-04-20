@@ -558,7 +558,7 @@ void setup() {
   prevRstBtn = HIGH;
 
   // ── OLED ─────────────────────────────────────────────────────
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+  if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
     Serial.println(F("OLED not found — check wiring"));
     for (;;) {}
   }
