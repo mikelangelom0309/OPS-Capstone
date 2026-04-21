@@ -549,7 +549,7 @@ void enterWaiting() {
 void setup() {
   Serial.begin(9600);
   Serial.println();
-  Serial.println(F("BOOTING P2 FILE"));
+  Serial.println(F("BOOTING P1 FILE"));
 
   // Input pins
   pinMode(PIN_JOY_BTN, INPUT_PULLUP);
@@ -594,7 +594,7 @@ void setup() {
 
   // Show waiting screen
   enterWaiting();
-  Serial.println(F("EXPECT pid=2 tx=PLYRB rx=CMD2A"));
+  Serial.println(F("EXPECT pid=1 tx=PLYRA rx=CMD1A"));
 }
 
 // ═══════════════════════════════════════════════════════════════

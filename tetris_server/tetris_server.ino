@@ -1,3 +1,5 @@
+// Function prototype for sendStartCommand
+void sendStartCommand();
 // ============================================================
 //  SERVER NRF24 DIAGNOSTIC
 //  Flash this onto the server Nano, then open Serial Monitor
@@ -14,6 +16,13 @@
 
 #define PIN_CE   9
 #define PIN_CSN 10
+#define PIN_START_BTN 4   // Physical start button (active LOW)
+// Debounce state for start button
+bool prevStartBtn = true;
+uint32_t tStartBtn = 0;
+const uint32_t T_BTN_DB = 240;
+
+
 #define SCR_W   128
 #define SCR_H    64
 
@@ -178,6 +187,7 @@ void handleSerialCommands() {
 }
 
 void setup() {
+    pinMode(PIN_START_BTN, INPUT_PULLUP);
   Serial.begin(9600);
   Serial.println();
   Serial.println(F("SERVER DIAG BOOT"));
@@ -226,6 +236,14 @@ void setup() {
 
 void loop() {
   uint32_t now = millis();
+  // Handle physical start button
+  bool startBtn = digitalRead(PIN_START_BTN);
+  if (!startBtn && prevStartBtn && (now - tStartBtn >= T_BTN_DB)) {
+    sendStartCommand();
+    tStartBtn = now;
+  }
+  prevStartBtn = startBtn;
+
   handleSerialCommands();
 
   uint8_t pipe = 0;
@@ -250,5 +268,29 @@ void loop() {
     printHeartbeat(now);
     drawStatus(now);
     tHeartbeat = now;
+  }
+}
+
+void sendStartCommand() {
+  ServerCmd cmd;
+  cmd.opcode = CMD_START;
+  cmd.gameSeed = (uint16_t)random(0, 65535); // random seed for both players
+  memset(cmd.reserved, 0, sizeof(cmd.reserved));
+
+  // Send to both command pipes
+  radio.stopListening();
+  radio.openWritingPipe(ADDR_C1);
+  radio.write(&cmd, sizeof(cmd));
+  radio.openWritingPipe(ADDR_C2);
+  radio.write(&cmd, sizeof(cmd));
+  radio.startListening();
+
+  Serial.print(F("START sent, seed="));
+  Serial.print(cmd.gameSeed);
+  Serial.println(F(" (button press)"));
+  if (oledReady) {
+    oled.setCursor(0, 54);
+    oled.print(F("START sent!        "));
+    oled.display();
   }
 }

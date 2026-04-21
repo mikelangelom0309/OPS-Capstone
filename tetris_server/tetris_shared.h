@@ -11,13 +11,12 @@
 #define RADIO_CHANNEL   108
 
 // ── Pipe addresses (exactly 5 chars + null) ───────────────────
-// P1 and P2 boards transmit on their own address.
-// Server listens on both. Players also listen on a dedicated
-// command pipe so the server can start/reset both boards.
-const uint8_t ADDR_P1[6] = "PLYRA";
-const uint8_t ADDR_P2[6] = "PLYRB";
-const uint8_t ADDR_C1[6] = "CMD1A";
-const uint8_t ADDR_C2[6] = "CMD2A";
+// IMPORTANT: On NRF24L01+, pipes 2-5 share bytes[1..4] with pipe 1.
+// The unique byte MUST be at index 0. 'A' for P1, 'B' for P2.
+const uint8_t ADDR_P1[6] = "APLYR";   // server listens on pipe 1
+const uint8_t ADDR_P2[6] = "BPLYR";   // server listens on pipe 2
+const uint8_t ADDR_C1[6] = "ACMD1";   // server → P1 command pipe
+const uint8_t ADDR_C2[6] = "BCMD2";   // server → P2 command pipe
 
 // ── Game states ───────────────────────────────────────────────
 #define GS_WAITING  0
