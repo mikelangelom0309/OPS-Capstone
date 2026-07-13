@@ -27,6 +27,9 @@ const uint8_t ADDR_C2[6] = "BCMD2";   // server → P2 command pipe
 #define CMD_NONE    0
 #define CMD_START   1
 #define CMD_RESET   2
+#define CMD_GARBAGE 3
+#define CMD_WIN    4
+#define CMD_LOSE   5
 
 // ── Packet sent from each player board → server every 100 ms ──
 // Total size: 8 bytes (well within NRF24 32-byte max payload).
@@ -37,13 +40,13 @@ struct __attribute__((packed)) PlayerPkt {
   uint8_t  lines;      // total lines cleared
   uint8_t  nextPiece;  // 0-6, index into SHAPES[]
   uint8_t  state;      // GS_*
-  uint8_t  reserved;   // keep a fixed 8-byte NRF payload
+  uint8_t  attackRows; // garbage rows to send after cancellation
 };
 
 // ── Packet sent from server → players ─────────────────────────
 // Fixed 8-byte payload to match the player packet size.
 struct __attribute__((packed)) ServerCmd {
   uint8_t  opcode;     // CMD_*
-  uint16_t gameSeed;   // used to synchronise both players on start
+  uint16_t  value;     // start seed or garbage count, depending on opcode
   uint8_t  reserved[5];
 };
